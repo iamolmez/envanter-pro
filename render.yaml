@@ -3,6 +3,7 @@ services:
     name: inventory-backend
     env: node
     region: frankfurt
+    rootDir: backend
     buildCommand: npm install && npx prisma generate && npx prisma db push
     startCommand: npm start
     envVars:
