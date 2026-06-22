@@ -10,12 +10,12 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.ico", "pwa-icon-192.png", "pwa-icon-512.png"],
+      includeAssets: ["favicon.svg"],
       manifest: {
-        name: "Akıllı Barkodlu Envanter ve Finans Yönetim Sistemi",
+        name: "EnvanterPro",
         short_name: "EnvanterPro",
         description:
-          "Web tabanlı akıllı barkodlu envanter ve finans yönetim sistemi",
+          "Akıllı barkodlu envanter ve finans yönetim sistemi",
         theme_color: "#1e40af",
         background_color: "#f8fafc",
         display: "standalone",
@@ -24,15 +24,9 @@ export default defineConfig({
         scope: "/",
         icons: [
           {
-            src: "pwa-icon-192.png",
-            sizes: "192x192",
-            type: "image/png",
-          },
-          {
-            src: "pwa-icon-512.png",
-            sizes: "512x512",
-            type: "image/png",
-            purpose: "any maskable",
+            src: "favicon.svg",
+            sizes: "any",
+            type: "image/svg+xml",
           },
         ],
       },

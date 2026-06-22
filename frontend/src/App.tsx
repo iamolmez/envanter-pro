@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
+import ErrorBoundary from "./components/ErrorBoundary";
 import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
 
@@ -39,6 +40,7 @@ export default function App() {
           },
         }}
       />
+      <ErrorBoundary>
       <Layout>
         <Suspense fallback={<PageLoader />}>
           <Routes>
@@ -53,6 +55,7 @@ export default function App() {
           </Routes>
         </Suspense>
       </Layout>
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }
