@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: inventory-backend
+    env: node
+    buildCommand: npm install && npx prisma generate && npx prisma db push
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        value: file:./dev.db
+      - key: CORS_ORIGIN
+        value: https://projenizin-adi.vercel.app

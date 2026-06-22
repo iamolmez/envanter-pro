@@ -1,0 +1,86 @@
+// Bu şema, Akıllı Barkodlu Envanter ve Finans Yönetim Sistemi için
+// tüm veritabanı tablolarını tanımlar.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ========== ÜRÜN TABLOSU ==========
+model Product {
+  id              Int      @id @default(autoincrement())
+  sku             String   @unique // Benzersiz Stok Kodu (barkodsuz ürünler için otomatik üretilir)
+  barcode         String?  @unique // Ürün Barkodu (nullable - barkodsuz ürünler için)
+  name            String   // Ürün Adı
+  description     String?  // Ürün Açıklaması
+  category        String   @default("Genel") // Ürün Kategorisi
+  purchasePriceUSD Float   // Dolar ($) Alış Fiyatı
+  salePriceUSD    Float    // Dolar ($) Satış Fiyatı
+  currentStock    Int      @default(0) // Mevcut Stok Miktarı
+  minStockLevel   Int      @default(5) // Minimum Stok Sınırı (kritik stok uyarısı)
+  unit            String   @default("Adet") // Birim (Adet, Kg, Lt, M, vb.)
+  isActive        Boolean  @default(true) // Ürün aktif/pasif durumu
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // İlişkiler
+  stockMovements  StockMovement[]
+}
+
+// ========== STOK HAREKETLERİ TABLOSU ==========
+model StockMovement {
+  id                Int      @id @default(autoincrement())
+  productId         Int      // Ürün ID (FK)
+  type              String   // İşlem Türü: "IN" (Giriş), "OUT" (Çıkış/Satış), "ADJUSTMENT" (Düzeltme)
+  quantity          Int      // Miktar (pozitif: giriş, negatif: çıkış olarak yorumlanır)
+  unitPriceUSD      Float?   // İşlem anındaki birim fiyat (USD)
+  exchangeRateTRY   Float?   // İşlem anındaki Dolar/TL kuru (geçmiş kur sabitlemesi için)
+  totalPriceUSD     Float?   // Toplam fiyat (quantity * unitPriceUSD)
+  totalPriceTRY     Float?   // Toplam TL karşılığı (totalPriceUSD * exchangeRateTRY)
+  note              String?  // İşlem notu
+  referenceNo       String?  // Referans numarası (fatura no, irsaliye no vb.)
+  createdAt         DateTime @default(now())
+
+  // İlişkiler
+  product           Product  @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+  @@index([createdAt])
+  @@index([type])
+}
+
+// ========== DÖVİZ KURU LOG TABLOSU ==========
+model ExchangeRate {
+  id        Int      @id @default(autoincrement())
+  rate      Float    // USD/TRY kuru
+  date      String   @unique // Tarih (YYYY-MM-DD formatında - her gün için bir kayıt)
+  source    String   @default("api") // Kaynak: "api" (canlı), "manual" (manuel)
+  createdAt DateTime @default(now())
+}
+
+// ========== SİSTEM AYARLARI TABLOSU ==========
+model Settings {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique // Ayar anahtarı
+  value     String   // Ayar değeri
+  group     String   @default("general") // Ayar grubu (general, currency, notification, etc.)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ========== KULLANICI TABLOSU (Gelecekteki genişleme) ==========
+model User {
+  id            Int      @id @default(autoincrement())
+  username      String   @unique
+  email         String   @unique
+  passwordHash  String
+  fullName      String
+  role          String   @default("user") // "admin", "user", "viewer"
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
