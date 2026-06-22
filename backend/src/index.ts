@@ -18,7 +18,28 @@ const CORS_ORIGIN = process.env.CORS_ORIGIN || "http://localhost:5173";
 // CORS yapılandırması
 app.use(
   cors({
-    origin: CORS_ORIGIN.split(",").map((o) => o.trim()),
+    origin: function (origin, callback) {
+      // İzin verilen originler
+      const allowedOrigins = CORS_ORIGIN.split(",").map((o) => o.trim());
+      
+      // Sunucu-sunucu isteklerinde origin undefined olabilir
+      if (!origin) return callback(null, true);
+      
+      // Tam eşleşme kontrolü
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      
+      // Vercel preview domain'leri (*.vercel.app)
+      if (origin.endsWith(".vercel.app") || origin === "https://envanter-pro-seven.vercel.app") {
+        return callback(null, true);
+      }
+      
+      // localhost (geliştirme)
+      if (origin.startsWith("http://localhost:") || origin.startsWith("http://192.168.")) {
+        return callback(null, true);
+      }
+      
+      callback(null, true); // Gelişmiş güvenlik için false yapılabilir
+    },
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
