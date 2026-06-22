@@ -71,22 +71,22 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
       const isActiveFilter = isActive !== undefined ? (isActive === "true" ? 1 : 0) : null;
       const categoryFilter = category && typeof category === "string" ? category : null;
 
-      // SQL injection'dan korumak için tüm kullanıcı girdileri parametre olarak geçilir
-      let sqlWhere = "WHERE currentStock <= minStockLevel";
-      const params: Array<string | number> = [];
+      // PostgreSQL uyumlu parametreize sorgu ($1, $2, ... formatı)
+      let whereClause = 'WHERE "currentStock" <= "minStockLevel"';
+      const params: Array<string | number | boolean> = [];
 
       if (isActiveFilter !== null) {
-        sqlWhere += " AND isActive = ?";
-        params.push(isActiveFilter);
+        whereClause += ` AND "isActive" = $${params.length + 1}`;
+        params.push(isActiveFilter === 1);
       }
 
       if (searchTerm !== null) {
-        sqlWhere += " AND (name LIKE ? OR barcode LIKE ? OR sku LIKE ?)";
+        whereClause += ` AND ("name" LIKE $${params.length + 1} OR "barcode" LIKE $${params.length + 2} OR "sku" LIKE $${params.length + 3})`;
         params.push(`%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`);
       }
 
       if (categoryFilter !== null) {
-        sqlWhere += " AND category = ?";
+        whereClause += ` AND "category" = $${params.length + 1}`;
         params.push(categoryFilter);
       }
 
@@ -94,7 +94,7 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
       const productRows = await prisma.$queryRawUnsafe<
         Array<Record<string, unknown>>
       >(
-        `SELECT * FROM Product ${sqlWhere} ORDER BY ${orderByField} ${orderByDirection} LIMIT ? OFFSET ?`,
+        `SELECT * FROM "Product" ${whereClause} ORDER BY "${orderByField}" ${orderByDirection} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
         ...params,
         pageSize,
         skip
@@ -102,12 +102,12 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
       products = productRows;
 
       const countRows = await prisma.$queryRawUnsafe<
-        Array<{ "COUNT(*)": number }>
+        Array<{ count: number }>
       >(
-        `SELECT COUNT(*) as "count" FROM Product ${sqlWhere}`,
+        `SELECT COUNT(*)::int as "count" FROM "Product" ${whereClause}`,
         ...params
       );
-      totalCount = Number(countRows[0]?.["COUNT(*)"]) || 0;
+      totalCount = Number(countRows[0]?.count) || 0;
     } else {
       // Normal sorgu (güvenli - Prisma ORM parametreize sorgu kullanır)
       [products, totalCount] = await Promise.all([
@@ -147,7 +147,7 @@ router.get(
       const products = await prisma.$queryRawUnsafe<
         Array<Record<string, unknown>>
       >(
-        "SELECT * FROM Product WHERE currentStock <= minStockLevel AND isActive = 1 ORDER BY currentStock ASC"
+        'SELECT * FROM "Product" WHERE "currentStock" <= "minStockLevel" AND "isActive" = true ORDER BY "currentStock" ASC'
       );
 
       res.json({
