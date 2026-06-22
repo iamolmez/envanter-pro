@@ -98,7 +98,7 @@ export default function ProductFormModal({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">
+          <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
             Adı <span className="text-red-400">*</span>
           </label>
           <input
@@ -107,16 +107,16 @@ export default function ProductFormModal({
             value={form.name}
             onChange={handleChange}
             placeholder="Ürün adı"
-            className={`w-full px-3 py-2 rounded-lg border text-sm ${
-              errors.name ? "border-red-300 bg-red-50" : "border-slate-200"
-            } focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition`}
+            className={`w-full px-3 py-2 rounded-lg border text-sm bg-white dark:bg-slate-900 ${
+              errors.name ? "border-red-300 bg-red-50 dark:bg-red-900/20 dark:border-red-700" : "border-slate-200 dark:border-slate-700"
+            } text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 transition`}
           />
-          {errors.name && <p className="text-xs text-red-500 mt-0.5">{errors.name}</p>}
+          {errors.name && <p className="text-xs text-red-500 dark:text-red-400 mt-0.5">{errors.name}</p>}
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">
+            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
               Barkod / SKU
             </label>
             <input
@@ -125,11 +125,11 @@ export default function ProductFormModal({
               value={form.barcode || ""}
               onChange={handleChange}
               placeholder="Boş = otomatik"
-              className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition"
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 transition"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">
+            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
               Kategori
             </label>
             <input
@@ -138,14 +138,14 @@ export default function ProductFormModal({
               value={form.category || ""}
               onChange={handleChange}
               placeholder="Örn: Elektronik"
-              className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition"
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 transition"
             />
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">
+            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
               Alış ($)
             </label>
             <input
@@ -155,11 +155,11 @@ export default function ProductFormModal({
               onChange={handleChange}
               step="0.01"
               min="0"
-              className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition"
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 transition"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">
+            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
               Satış ($)
             </label>
             <input
@@ -169,19 +169,19 @@ export default function ProductFormModal({
               onChange={handleChange}
               step="0.01"
               min="0"
-              className={`w-full px-3 py-2 rounded-lg border text-sm ${
-                errors.salePriceUSD ? "border-red-300 bg-red-50" : "border-slate-200"
-              } focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition`}
+              className={`w-full px-3 py-2 rounded-lg border text-sm bg-white dark:bg-slate-900 ${
+                errors.salePriceUSD ? "border-red-300 bg-red-50 dark:bg-red-900/20 dark:border-red-700" : "border-slate-200 dark:border-slate-700"
+              } text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 transition`}
             />
             {errors.salePriceUSD && (
-              <p className="text-xs text-red-500 mt-0.5">{errors.salePriceUSD}</p>
+              <p className="text-xs text-red-500 dark:text-red-400 mt-0.5">{errors.salePriceUSD}</p>
             )}
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">
+            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
               Stok
             </label>
             <input
@@ -191,18 +191,18 @@ export default function ProductFormModal({
               onChange={handleChange}
               min="0"
               disabled={isEditing}
-              className={`w-full px-3 py-2 rounded-lg border text-sm ${
-                errors.currentStock ? "border-red-300 bg-red-50" : "border-slate-200"
-              } focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition ${
-                isEditing ? "bg-slate-50 text-slate-400" : ""
+              className={`w-full px-3 py-2 rounded-lg border text-sm bg-white dark:bg-slate-900 ${
+                errors.currentStock ? "border-red-300 bg-red-50 dark:bg-red-900/20 dark:border-red-700" : "border-slate-200 dark:border-slate-700"
+              } text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-400 transition ${
+                isEditing ? "bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-500" : ""
               }`}
             />
             {errors.currentStock && (
-              <p className="text-xs text-red-500 mt-0.5">{errors.currentStock}</p>
+              <p className="text-xs text-red-500 dark:text-red-400 mt-0.5">{errors.currentStock}</p>
             )}
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">
+            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
               Min. Stok
             </label>
             <input
@@ -211,7 +211,7 @@ export default function ProductFormModal({
               value={form.minStockLevel}
               onChange={handleChange}
               min="0"
-              className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 transition"
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-400 transition"
             />
           </div>
         </div>
@@ -221,14 +221,14 @@ export default function ProductFormModal({
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="flex-1 px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-500 hover:bg-slate-50 transition disabled:opacity-50"
+            className="flex-1 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition disabled:opacity-50 active:scale-[0.98]"
           >
             İptal
           </button>
           <button
             type="submit"
             disabled={loading}
-            className="flex-1 px-3 py-2 rounded-lg bg-blue-600 text-sm text-white hover:bg-blue-700 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+            className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-sm text-white transition disabled:opacity-50 flex items-center justify-center gap-1.5 active:scale-[0.98] shadow-sm shadow-indigo-200 dark:shadow-indigo-900/30"
           >
             {loading && (
               <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />

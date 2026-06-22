@@ -12,6 +12,7 @@ import type {
   BatchResponse,
   PaginatedResponse,
 } from "../types";
+import type { BarcodeLookupResult } from "../types";
 
 // Development'da Vite proxy, production'da Render URL'si
 const API_BASE_URL =
@@ -107,6 +108,13 @@ export const productService = {
   async getCategories(): Promise<string[]> {
     const response = await api.get<ApiResponse<string[]>>(
       "/products/categories"
+    );
+    return response.data.data;
+  },
+
+  async lookupBarcode(barcode: string): Promise<BarcodeLookupResult> {
+    const response = await api.get<ApiResponse<BarcodeLookupResult>>(
+      `/products/lookup/${encodeURIComponent(barcode)}`
     );
     return response.data.data;
   },
@@ -232,6 +240,13 @@ export const settingsService = {
     const response = await api.put<
       ApiResponse<{ key: string; value: string }>
     >(`/settings/${key}`, { value, group });
+    return response.data.data;
+  },
+
+  async seed(): Promise<{ created: number; message: string }> {
+    const response = await api.post<
+      ApiResponse<{ created: number; message: string }>
+    >("/settings/seed");
     return response.data.data;
   },
 };

@@ -85,6 +85,29 @@ export interface Settings {
   grouped: Record<string, Array<{ key: string; value: string }>>;
 }
 
+// ==================== BARKOD LOOKUP TİPLERİ ====================
+export interface BarcodeLookupResult {
+  found: boolean;
+  source?: "local" | "openfoodfacts" | "upcitemdb";
+  barcode: string;
+  productName?: string;
+  product?: {
+    id: number;
+    name: string;
+    sku: string;
+    category: string;
+    purchasePriceUSD: number;
+    salePriceUSD: number;
+    currentStock: number;
+    unit: string;
+  };
+  brand?: string;
+  category?: string;
+  description?: string;
+  imageUrl?: string;
+  quantity?: string;
+}
+
 // ==================== API YANIT TİPLERİ ====================
 export interface ApiResponse<T> {
   success: boolean;

@@ -59,7 +59,7 @@ export default defineConfig({
     host: "192.168.1.110", // Telefondan erişim için
     proxy: {
       "/api": {
-        target: "https://envanter-pro-1.onrender.com",
+        target: "http://localhost:3002",
         changeOrigin: true,
       },
     },

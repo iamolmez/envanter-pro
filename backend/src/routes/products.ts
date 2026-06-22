@@ -45,9 +45,12 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
       where.category = category;
     }
 
-    // Aktif/Pasif filtresi
+    // Aktif/Pasif filtresi (varsayılan: sadece aktif ürünler)
     if (isActive !== undefined) {
       where.isActive = isActive === "true";
+    } else {
+      // Kullanıcı özellikle istemediği sürece pasif ürünleri gösterme
+      where.isActive = true;
     }
 
     // Sıralama - SQL injection koruması: sadece whitelist'teki alanlara izin ver

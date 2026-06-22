@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import cron from "node-cron";
+import prisma from "./prisma/client";
 import routes from "./routes";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { fetchAndSaveExchangeRate } from "./services/exchangeRateService";
@@ -96,6 +97,58 @@ cron.schedule(cronSchedule, async () => {
     console.error("[CRON] Döviz kuru güncelleme hatası:", error);
   }
 });
+
+// ==================== OTOMATİK SEED (İLK ÇALIŞTIRMADA DEFAULT AYARLAR) ====================
+
+const defaultSettings = [
+  { key: "company_name", value: "EnvanterPro", group: "general" },
+  { key: "company_address", value: "", group: "general" },
+  { key: "company_phone", value: "", group: "general" },
+  { key: "company_email", value: "", group: "general" },
+  { key: "default_unit", value: "Adet", group: "general" },
+  { key: "default_currency", value: "USD", group: "general" },
+  { key: "language", value: "tr", group: "general" },
+  { key: "date_format", value: "DD.MM.YYYY", group: "general" },
+  { key: "auto_fetch_exchange_rate", value: "true", group: "currency" },
+  { key: "exchange_rate_cron_schedule", value: "0 */6 * * *", group: "currency" },
+  { key: "exchange_rate_margin_percent", value: "0", group: "currency" },
+  { key: "default_exchange_rate", value: "30.00", group: "currency" },
+  { key: "low_stock_warning", value: "true", group: "notification" },
+  { key: "low_stock_threshold", value: "5", group: "notification" },
+  { key: "out_of_stock_warning", value: "true", group: "notification" },
+  { key: "stock_expiry_warning", value: "false", group: "notification" },
+  { key: "low_stock_email_notification", value: "", group: "notification" },
+];
+
+async function seedDefaults() {
+  try {
+    // Hızlı kontrol: settings tablosunda kayıt var mı?
+    const count = await prisma.settings.count();
+    if (count === 0) {
+      console.log("⚙️  Varsayılan ayarlar oluşturuluyor...");
+      for (const s of defaultSettings) {
+        await prisma.settings.create({ data: s });
+      }
+      console.log(`✅ ${defaultSettings.length} varsayılan ayar oluşturuldu.`);
+    } else {
+      // Eksik ayarları tamamla (yeni eklenenler varsa)
+      let added = 0;
+      for (const s of defaultSettings) {
+        const existing = await prisma.settings.findUnique({ where: { key: s.key } });
+        if (!existing) {
+          await prisma.settings.create({ data: s });
+          added++;
+        }
+      }
+      if (added > 0) console.log(`➕ ${added} yeni varsayılan ayar eklendi.`);
+    }
+  } catch (e) {
+    console.warn("⚠️  Seed kontrolü yapılamadı (tablo henüz hazır olmayabilir):", (e as Error).message);
+  }
+}
+
+// Sunucu başlayınca seed'i çalıştır (biraz gecikmeli, DB'nin hazır olması için)
+setTimeout(() => { seedDefaults(); }, 2000);
 
 // Uygulama ilk açıldığında da kuru çek
 if (process.env.NODE_ENV !== "production") {

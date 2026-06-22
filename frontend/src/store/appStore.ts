@@ -7,6 +7,29 @@ import type {
 } from "../types";
 import { productService, stockMovementService, exchangeRateService } from "../services/api";
 
+// ==================== TEMA DURUMU ====================
+interface ThemeState {
+  isDark: boolean;
+  toggle: () => void;
+  setDark: (dark: boolean) => void;
+}
+
+export const useThemeStore = create<ThemeState>((set) => ({
+  isDark: localStorage.getItem("theme") === "dark",
+  toggle: () =>
+    set((state) => {
+      const newDark = !state.isDark;
+      localStorage.setItem("theme", newDark ? "dark" : "light");
+      document.documentElement.classList.toggle("dark", newDark);
+      return { isDark: newDark };
+    }),
+  setDark: (dark) => {
+    localStorage.setItem("theme", dark ? "dark" : "light");
+    document.documentElement.classList.toggle("dark", dark);
+    set({ isDark: dark });
+  },
+}));
+
 // ==================== SİDEBAR DURUMU ====================
 interface SidebarState {
   isOpen: boolean;
