@@ -1,134 +1,104 @@
 import prisma from "../prisma/client";
 import fetch from "node-fetch";
 
-const EXCHANGE_RATE_API_URL =
-  process.env.EXCHANGE_RATE_API_URL || "https://api.exchangerate.host/latest";
-const EXCHANGE_RATE_API_KEY = process.env.EXCHANGE_RATE_API_KEY || "";
+// Frankfurter API (ücretsiz, ECB verisi, anahtar gerekmez)
+const FRANKFURTER_URL = "https://api.frankfurter.dev/v2";
+// Yedek API (Frankfurter çalışmazsa)
+const FALLBACK_URL = "https://latest.currency-api.pages.dev/v1/currencies/usd.json";
 
 /**
- * Güncel döviz kurunu çeker ve ExchangeRate tablosuna kaydeder.
- * API: exchangerate.host (ücretsiz plan - günde 1000 istek)
- * Fallback: exchangerate-api.com alternatif olarak kullanılabilir.
+ * Güncel döviz kurunu dener: Frankfurter → currency-api → önbellek → varsayılan
  */
 export async function fetchAndSaveExchangeRate(): Promise<{
   rate: number;
   date: string;
   source: string;
 }> {
-  const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+  const today = new Date().toISOString().split("T")[0];
 
-  try {
-    // API'den canlı kur çek
-    const apiUrl = EXCHANGE_RATE_API_KEY
-      ? `${EXCHANGE_RATE_API_URL}?access_key=${EXCHANGE_RATE_API_KEY}&base=USD&symbols=TRY`
-      : `${EXCHANGE_RATE_API_URL}?base=USD&symbols=TRY`;
+  // Sırayla dene
+  const apis = [
+    { url: `${FRANKFURTER_URL}/latest?base=USD&symbols=TRY`, label: "frankfurter" as const },
+    { url: FALLBACK_URL, label: "currency-api" as const },
+  ];
 
-    const response = await fetch(apiUrl, {
-      timeout: 10000, // 10 saniye timeout
-    });
+  for (const api of apis) {
+    try {
+      const res = await fetch(api.url, { timeout: 8000 });
+      if (!res.ok) continue;
 
-    if (!response.ok) {
-      throw new Error(`API yanıt vermedi: ${response.status}`);
+      const data = (await res.json()) as Record<string, unknown>;
+      let rate: number | undefined;
+
+      if (api.label === "frankfurter") {
+        const d = data as { rates?: Record<string, number> };
+        rate = d.rates?.TRY;
+      } else {
+        const d = data as { usd?: Record<string, number> };
+        rate = d.usd?.try;
+      }
+
+      if (!rate || rate <= 0) continue;
+
+      await prisma.exchangeRate.upsert({
+        where: { date: today },
+        update: { rate, source: "api" },
+        create: { rate, date: today, source: "api" },
+      });
+
+      console.log(`[DÖVİZ] USD/TRY: ${rate} (${today}, ${api.label})`);
+      return { rate, date: today, source: "api" };
+    } catch (err) {
+      console.warn(`[DÖVİZ] ${api.label} başarısız:`, (err as Error).message);
     }
-
-    const data = (await response.json()) as {
-      success: boolean;
-      rates?: { TRY: number };
-      error?: { info: string };
-    };
-
-    if (!data.success || !data.rates) {
-      throw new Error(
-        `API hatası: ${data.error?.info || "Bilinmeyen hata"}`
-      );
-    }
-
-    const rate = data.rates.TRY;
-    const source = "api";
-
-    // Veritabanına kaydet (bugün için kayıt varsa güncelle, yoksa oluştur)
-    await prisma.exchangeRate.upsert({
-      where: { date: today },
-      update: { rate, source },
-      create: { rate, date: today, source },
-    });
-
-    console.log(`[DÖVİZ] USD/TRY kuru güncellendi: ${rate} (${today})`);
-
-    return { rate, date: today, source: "api" };
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Bilinmeyen hata";
-    console.error(`[DÖVİZ] Kur çekme hatası: ${errorMessage}`);
-
-    // API başarısız olursa, daha önce kaydedilmiş son kuru dene
-    const lastRate = await prisma.exchangeRate.findFirst({
-      orderBy: { date: "desc" },
-    });
-
-    if (lastRate) {
-      console.log(
-        `[DÖVİZ] Son bilinen kur kullanılıyor: ${lastRate.rate} (${lastRate.date})`
-      );
-      return {
-        rate: lastRate.rate,
-        date: lastRate.date,
-        source: "cached",
-      };
-    }
-
-    // Hiç kur yoksa varsayılan değer (30.00 TL - gerçek API bağlanana kadar)
-    const fallbackRate = 30.0;
-    console.warn(`[DÖVİZ] Varsayılan kur kullanılıyor: ${fallbackRate}`);
-
-    await prisma.exchangeRate.upsert({
-      where: { date: today },
-      update: { rate: fallbackRate, source: "manual" },
-      create: { rate: fallbackRate, date: today, source: "manual" },
-    });
-
-    return {
-      rate: fallbackRate,
-      date: today,
-      source: "manual",
-    };
   }
+
+  // Tüm API'ler başarısız — önbellekteki son kuru dene
+  console.error("[DÖVİZ] Tüm API'ler başarısız, önbellek kullanılıyor");
+
+  const lastRate = await prisma.exchangeRate.findFirst({
+    orderBy: { date: "desc" },
+  });
+
+  if (lastRate) {
+    console.log(`[DÖVİZ] Son bilinen kur: ${lastRate.rate} (${lastRate.date})`);
+    return { rate: lastRate.rate, date: lastRate.date, source: "cached" };
+  }
+
+  // Hiç kur yoksa varsayılan
+  const fallbackRate = 30.0;
+  console.warn(`[DÖVİZ] Varsayılan kur: ${fallbackRate}`);
+
+  await prisma.exchangeRate.upsert({
+    where: { date: today },
+    update: { rate: fallbackRate, source: "manual" },
+    create: { rate: fallbackRate, date: today, source: "manual" },
+  });
+
+  return { rate: fallbackRate, date: today, source: "manual" };
 }
 
 /**
- * Belirli bir tarihteki dolar kurunu döndürür.
- * Eğer o tarihe ait kur yoksa, en yakın geçmiş kuru döndürür.
+ * Belirli bir tarihteki dolar kurunu döndürür (en yakın kaydı da dener).
  */
 export async function getExchangeRateForDate(
   date: Date
 ): Promise<{ rate: number; date: string } | null> {
   const dateStr = date.toISOString().split("T")[0];
 
-  // Önce tam tarihi dene
-  const exactRate = await prisma.exchangeRate.findUnique({
-    where: { date: dateStr },
-  });
+  const exact = await prisma.exchangeRate.findUnique({ where: { date: dateStr } });
+  if (exact) return { rate: exact.rate, date: exact.date };
 
-  if (exactRate) {
-    return { rate: exactRate.rate, date: exactRate.date };
-  }
-
-  // Yoksa en yakın geçmiş kaydı bul
-  const closestRate = await prisma.exchangeRate.findFirst({
+  const closest = await prisma.exchangeRate.findFirst({
     where: { date: { lte: dateStr } },
     orderBy: { date: "desc" },
   });
 
-  if (closestRate) {
-    return { rate: closestRate.rate, date: closestRate.date };
-  }
-
-  return null;
+  return closest ? { rate: closest.rate, date: closest.date } : null;
 }
 
 /**
- * İşlem anındaki kuru loglamak için yardımcı fonksiyon.
- * Stok hareketi oluşturulurken çağrılır.
+ * Bugünün kurunu döndürür (varsa önbellekten, yoksa API'den çeker).
  */
 export async function getCurrentExchangeRate(): Promise<{
   rate: number;
@@ -137,19 +107,8 @@ export async function getCurrentExchangeRate(): Promise<{
 }> {
   const today = new Date().toISOString().split("T")[0];
 
-  // Bugün için kayıt var mı kontrol et
-  const todayRecord = await prisma.exchangeRate.findUnique({
-    where: { date: today },
-  });
+  const cached = await prisma.exchangeRate.findUnique({ where: { date: today } });
+  if (cached) return { rate: cached.rate, date: cached.date, source: cached.source };
 
-  if (todayRecord) {
-    return {
-      rate: todayRecord.rate,
-      date: todayRecord.date,
-      source: todayRecord.source,
-    };
-  }
-
-  // Yoksa canlı çekmeyi dene
   return await fetchAndSaveExchangeRate();
 }
