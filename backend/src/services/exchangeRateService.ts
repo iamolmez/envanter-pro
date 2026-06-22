@@ -1,5 +1,4 @@
 import prisma from "../prisma/client";
-import fetch from "node-fetch";
 
 // Frankfurter API (ücretsiz, ECB verisi, anahtar gerekmez)
 const FRANKFURTER_URL = "https://api.frankfurter.dev/v2";
@@ -24,7 +23,7 @@ export async function fetchAndSaveExchangeRate(): Promise<{
 
   for (const api of apis) {
     try {
-      const res = await fetch(api.url, { timeout: 8000 });
+      const res = await fetch(api.url, { signal: AbortSignal.timeout(8000) });
       if (!res.ok) continue;
 
       const data = (await res.json()) as Record<string, unknown>;
