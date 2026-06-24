@@ -23,6 +23,7 @@ model Product {
   currentStock    Int      @default(0) // Mevcut Stok Miktarı
   minStockLevel   Int      @default(5) // Minimum Stok Sınırı (kritik stok uyarısı)
   unit            String   @default("Adet") // Birim (Adet, Kg, Lt, M, vb.)
+  imageUrl        String?  // Ürün resmi (base64 data URL)
   isActive        Boolean  @default(true) // Ürün aktif/pasif durumu
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

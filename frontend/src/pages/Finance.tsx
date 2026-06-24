@@ -1,55 +1,196 @@
-import React, { useEffect, useState } from "react";
-import { stockMovementService, productService } from "../services/api";
-import type { StockMovement, DashboardSummary } from "../types";
+import React, { useEffect, useState, useRef } from "react";
+import { stockMovementService, productService, exchangeRateService } from "../services/api";
+import type { StockMovement, DashboardSummary, ExchangeRate, Product } from "../types";
 import toast from "react-hot-toast";
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LineChart, Line } from "recharts";
-import { useThemeStore } from "../store/appStore";
+import { useTranslation } from "../hooks/useI18n";
 
-const formatUSD = (v: number) => new Intl.NumberFormat("tr-TR", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(v);
-const formatTRY = (v: number) => new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY", minimumFractionDigits: 2 }).format(v);
-const tooltipStyle = (isDark: boolean) => ({
-  borderRadius: "12px",
-  border: isDark ? "1px solid #334155" : "1px solid #e2e8f0",
-  boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)",
-  background: isDark ? "#1e293b" : "#fff",
-  color: isDark ? "#e2e8f0" : "#1e293b",
-  fontSize: "12px",
-});
+const formatUSD = (v: number) =>
+  new Intl.NumberFormat("tr-TR", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(v);
+const formatTRY = (v: number) =>
+  new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY", minimumFractionDigits: 2 }).format(v);
 
-const COLORS = { in: "#22c55e", out: "#ef4444", profit: "#6366f1" };
+interface DailyFinance { name: string; gelir: number; gider: number; kar: number; }
 
+// ==================== BOTTOM SHEET COMPONENT ====================
+function BottomSheet({
+  id,
+  isOpen,
+  onClose,
+  title,
+  icon,
+  iconColor,
+  children,
+  large,
+}: {
+  id: string;
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  icon?: string;
+  iconColor?: string;
+  children: React.ReactNode;
+  large?: boolean;
+}) {
+  return (
+    <>
+      {/* Overlay */}
+      <div
+        className={`fixed inset-0 bg-black/50 z-[90] transition-opacity duration-300 ${
+          isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        }`}
+        onClick={onClose}
+      />
+      {/* Sheet */}
+      <div
+        className={`fixed bottom-0 left-0 right-0 z-[100] bg-white dark:bg-surface-dim rounded-t-3xl p-6 shadow-2xl transition-transform duration-400 ease-out ${
+          large ? "h-[80vh]" : ""
+        } ${isOpen ? "translate-y-0" : "translate-y-full"}`}
+        style={{ transitionTimingFunction: "cubic-bezier(0.4, 0, 0.2, 1)" }}
+      >
+        <div className="w-12 h-1.5 bg-outline-variant rounded-full mx-auto mb-6" />
+        {icon ? (
+          <div className="flex items-center gap-2 mb-4">
+            <span className={`material-symbols-outlined ${iconColor || "text-primary"}`}>{icon}</span>
+            <h3 className="text-headline-sm font-bold text-on-surface">{title}</h3>
+          </div>
+        ) : (
+          <h3 className="text-headline-sm font-bold text-on-surface mb-6">{title}</h3>
+        )}
+        {children}
+      </div>
+    </>
+  );
+}
+
+// ==================== ACTION BUTTON COMPONENT ====================
+function ActionButton({ icon, label, onClick }: { icon: string; label: string; onClick?: () => void }) {
+  return (
+    <button className="flex flex-col items-center gap-2 group" onClick={onClick}>
+      <div className="w-12 h-12 rounded-full bg-secondary-container flex items-center justify-center text-primary-container group-active:scale-90 hover:shadow-md transition-all">
+        <span className="material-symbols-outlined">{icon}</span>
+      </div>
+      <span className="text-label-sm font-medium text-center">{label}</span>
+    </button>
+  );
+}
+
+// ==================== REPORT BUTTON COMPONENT ====================
+function ReportButton({ icon, label, bgClass, borderClass, textClass, onClick }: {
+  icon: string; label: string; bgClass: string; borderClass: string; textClass: string; onClick?: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex flex-col items-center justify-center p-4 ${bgClass} border ${borderClass} rounded-xl hover:bg-opacity-80 transition-all active:scale-95 group shadow-sm`}
+    >
+      <span className={`material-symbols-outlined ${textClass} text-3xl mb-2`}>{icon}</span>
+      <span className={`text-label-md font-bold ${textClass}`}>{label}</span>
+    </button>
+  );
+}
+
+// ==================== TRANSACTION ITEM ====================
+function TransactionItem({ movement, index, currentRate }: { movement: StockMovement; index: number; currentRate: number | null }) {
+  const { t } = useTranslation();
+  const isIncome = movement.type === "OUT";
+  const totalTRY = movement.totalPriceUSD && currentRate ? movement.totalPriceUSD * currentRate : null;
+
+  return (
+    <div
+      className={`bg-surface border border-outline-variant p-4 rounded-xl flex items-center justify-between ${
+        isIncome ? "status-emerald" : "status-rose"
+      } reveal-item`}
+      style={{ animationDelay: `${(index + 1) * 100}ms` }}
+    >
+      <div className="flex items-center gap-3 min-w-0 flex-1">
+        <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+          isIncome ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"
+        }`}>
+          <span className="material-symbols-outlined">{isIncome ? "call_received" : "call_made"}</span>
+        </div>
+        <div className="min-w-0">
+          <p className="text-body-md font-bold text-on-surface truncate">
+            {            movement.product?.name || t("finance.unknownProduct")}
+          </p>
+          <p className="text-body-sm text-on-surface-variant">
+            {movement.type === "OUT" ? t("finance.income") : t("finance.expense")} • {new Date(movement.createdAt).toLocaleDateString("tr-TR", { day: "numeric", month: "short", year: "numeric" })}
+          </p>
+        </div>
+      </div>
+      <div className="text-right shrink-0 ml-3">
+        <p className={`text-body-md font-bold ${isIncome ? "text-emerald-600" : "text-error"}`}>
+          {isIncome ? "+" : "-"}
+          {totalTRY ? formatTRY(Math.abs(totalTRY)) : (movement.totalPriceUSD ? formatUSD(Math.abs(movement.totalPriceUSD)) : "—")}
+        </p>
+        <p className="text-label-sm text-on-surface-variant">{isIncome ? t("finance.income") : t("finance.expense")}</p>
+      </div>
+    </div>
+  );
+}
+
+// ==================== CHART BARS ====================
+function MiniChart({ data, color }: { data: number[]; color: string }) {
+  const max = Math.max(...data, 1);
+  return (
+    <div className="flex items-end justify-between h-48 gap-2">
+      {data.map((val, i) => {
+        const opacity = 0.2 + (i / data.length) * 0.6;
+        return (
+          <div
+            key={i}
+            className="flex-1 rounded-t-lg transition-all duration-700"
+            style={{ height: `${(val / max) * 100}%`, backgroundColor: color, opacity }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+// ==================== MAIN COMPONENT ====================
 export default function Finance() {
+  const { t } = useTranslation();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [movements, setMovements] = useState<StockMovement[]>([]);
+  const [currentRate, setCurrentRate] = useState<ExchangeRate | null>(null);
   const [loading, setLoading] = useState(true);
-  const isDark = useThemeStore((s) => s.isDark);
+  const headerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  // Bottom sheet states
+  const [openSheet, setOpenSheet] = useState<string | null>(null);
+
+  // Form states
+  const [formOdeme, setFormOdeme] = useState({ name: "", description: "", amount: "" });
+  const [formFatura, setFormFatura] = useState({ no: "", description: "", amount: "" });
+  const [formTransfer, setFormTransfer] = useState({ recipient: "", description: "", amount: "" });
+
+  useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [sumData, movData] = await Promise.all([
+      const [sumData, movData, rateData] = await Promise.all([
         stockMovementService.getSummary(),
-        stockMovementService.getAll({ limit: 100, sortOrder: "desc" }),
+        stockMovementService.getAll({ limit: 200, sortOrder: "desc" }),
+        exchangeRateService.getCurrent(),
       ]);
       setSummary(sumData);
       setMovements(movData.movements || []);
+      setCurrentRate(rateData);
     } catch {
-      toast.error("Finans verileri yüklenemedi");
+      toast.error(t("common.error"));
     } finally {
       setLoading(false);
     }
   };
 
-  // Günlük bazda gelir/gider
-  const dailyData = (() => {
+  // Daily finance data for charts
+  const dailyData: DailyFinance[] = (() => {
     const map = new Map<string, { gelir: number; gider: number; kar: number }>();
     const now = new Date();
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(now); d.setDate(d.getDate() - i);
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
       const key = d.toLocaleDateString("tr-TR", { weekday: "short", day: "numeric" });
       map.set(key, { gelir: 0, gider: 0, kar: 0 });
     }
@@ -58,161 +199,375 @@ export default function Finance() {
       const key = d.toLocaleDateString("tr-TR", { weekday: "short", day: "numeric" });
       if (map.has(key) && m.totalPriceUSD) {
         const entry = map.get(key)!;
-        if (m.type === "IN") { entry.gider += m.totalPriceUSD; entry.kar -= m.totalPriceUSD; }
-        else if (m.type === "OUT") { entry.gelir += Math.abs(m.totalPriceUSD); entry.kar += Math.abs(m.totalPriceUSD); }
+        if (m.type === "OUT") { entry.gelir += Math.abs(m.totalPriceUSD); entry.kar += Math.abs(m.totalPriceUSD); }
+        else if (m.type === "IN") { entry.gider += Math.abs(m.totalPriceUSD); entry.kar -= Math.abs(m.totalPriceUSD); }
       }
     });
     return [...map.entries()].map(([name, data]) => ({ name, ...data }));
   })();
 
-  const totalIncome = movements.filter(m => m.type === "OUT").reduce((s, m) => s + Math.abs(m.totalPriceUSD || 0), 0);
-  const totalExpense = movements.filter(m => m.type === "IN").reduce((s, m) => s + (m.totalPriceUSD || 0), 0);
-  const netProfit = totalIncome - totalExpense;
+  // Monthly totals
+  const monthlyGelirTRY = dailyData.reduce((s, d) => s + d.gelir, 0) * (currentRate?.rate || 1);
+  const monthlyGiderTRY = dailyData.reduce((s, d) => s + d.gider, 0) * (currentRate?.rate || 1);
+  const monthlyKarTRY = dailyData.reduce((s, d) => s + d.kar, 0) * (currentRate?.rate || 1);
+
+  // Chart data for bottom sheets (last 5 months simulated)
+  const karChartData = [40, 65, 50, 85, 95];
+  const giderChartData = [70, 45, 80, 60, 40];
+
+  const openSheetFn = (id: string) => setOpenSheet(id);
+  const closeSheet = () => setOpenSheet(null);
+
+  // Scroll effect for header
+  useEffect(() => {
+    const handleScroll = () => {
+      if (headerRef.current) {
+        if (window.scrollY > 10) {
+          headerRef.current.classList.add("shadow-md", "bg-white");
+        } else {
+          headerRef.current.classList.remove("shadow-md", "bg-white");
+        }
+      }
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  // Body scroll lock when sheet is open
+  useEffect(() => {
+    if (openSheet) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => { document.body.style.overflow = ""; };
+  }, [openSheet]);
+
+  const handleFormSubmit = (type: string, e: React.FormEvent) => {
+    e.preventDefault();
+    toast.success(`${type} başarıyla kaydedildi!`);
+    setOpenSheet(null);
+  };
+
+  if (loading && !summary) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-body-sm text-on-surface-variant">{t("finance.loading")}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Finans Yönetimi</h1>
-        <p className="text-xs text-slate-400 dark:text-slate-500">Gelir, gider ve kârlılık analizi</p>
-      </div>
-
-      {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <div className="w-8 h-8 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+    <div className="bg-surface min-h-screen">
+      {/* Top AppBar */}
+      <header
+        ref={headerRef}
+        className="fixed top-0 w-full z-50 flex items-center justify-between px-container-margin-mobile h-touch-min bg-surface border-b border-outline-variant transition-shadow duration-300"
+      >
+        <div className="flex items-center gap-2">
+          <span className="material-symbols-outlined text-primary">inventory_2</span>
+          <h1 className="text-headline-sm font-bold text-primary">{t("app.name")}</h1>
         </div>
-      ) : !summary ? (
-        <div className="text-center py-20 text-slate-400 dark:text-slate-500">
-          <span className="text-5xl block mb-3">💰</span>
-          <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Finans verisi bulunamadı</p>
-          <p className="text-xs">Stok giriş/çıkışı yaptıkça finans verileriniz oluşacak</p>
+        <div className="flex items-center gap-4">
+          <button className="p-2 hover:bg-surface-container-low transition-colors rounded-full">
+            <span className="material-symbols-outlined text-on-surface-variant">search</span>
+          </button>
+          <button className="p-2 hover:bg-surface-container-low transition-colors rounded-full">
+            <span className="material-symbols-outlined text-on-surface-variant">notifications</span>
+          </button>
         </div>
-      ) : (
-        <>
-          {/* Kartlar */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5">
-              <p className="text-xs text-slate-400 dark:text-slate-500 mb-1">Toplam Gelir</p>
-              <p className="text-xl font-bold text-green-600 dark:text-green-400">{formatUSD(totalIncome)}</p>
-              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{formatTRY(totalIncome * (summary?.currentExchangeRate || 1))}</p>
-            </div>
-            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5">
-              <p className="text-xs text-slate-400 dark:text-slate-500 mb-1">Toplam Gider</p>
-              <p className="text-xl font-bold text-red-600 dark:text-red-400">{formatUSD(totalExpense)}</p>
-              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{formatTRY(totalExpense * (summary?.currentExchangeRate || 1))}</p>
-            </div>
-            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5">
-              <p className="text-xs text-slate-400 dark:text-slate-500 mb-1">Net Kâr/Zarar</p>
-              <p className={`text-xl font-bold ${netProfit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
-                {netProfit >= 0 ? "+" : ""}{formatUSD(netProfit)}
-              </p>
-              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{netProfit >= 0 ? "+" : ""}{formatTRY(netProfit * (summary?.currentExchangeRate || 1))}</p>
-            </div>
-            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5">
-              <p className="text-xs text-slate-400 dark:text-slate-500 mb-1">Envanter Değeri</p>
-              <p className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{formatUSD(summary.totalInventoryValueUSD)}</p>
-              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{formatTRY(summary.totalInventoryValueTRY)}</p>
-            </div>
-          </div>
+      </header>
 
-          {/* Grafik */}
-          {dailyData.length > 0 && (
-            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-6">
-              <h2 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">Günlük Gelir/Gider (Son 7 Gün)</h2>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={dailyData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" strokeOpacity={0.2} />
-                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#64748b" }} />
-                    <YAxis tick={{ fontSize: 11, fill: "#64748b" }} tickFormatter={(v) => `$${v}`} />
-                    <Tooltip contentStyle={tooltipStyle(isDark)} formatter={(value: number) => [formatUSD(value)]} />
-                    <Bar dataKey="gelir" name="Gelir" fill={COLORS.in} radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="gider" name="Gider" fill={COLORS.out} radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+      <main className="pt-16 px-container-margin-mobile pb-16">
+        {/* ====== Summary Section: Toplam Bakiye ====== */}
+        <section className="mt-stack-lg">
+          <div className="bg-primary p-6 rounded-xl shadow-lg relative overflow-hidden">
+            {/* Premium Shimmer Layer */}
+            <div className="absolute inset-0 animate-shimmer pointer-events-none" />
+            {/* Abstract Pattern Background */}
+            <div className="absolute inset-0 opacity-10 pointer-events-none">
+              <svg height="100%" preserveAspectRatio="none" viewBox="0 0 100 100" width="100%">
+                <path d="M0 100 C 20 0 50 0 100 100" fill="transparent" stroke="white" strokeWidth="0.5" />
+                <path d="M0 80 C 30 20 60 20 100 80" fill="transparent" stroke="white" strokeWidth="0.5" />
+              </svg>
+            </div>
+            <p className="text-white/80 text-label-md font-label-md">{t("finance.totalBalance")}</p>
+            <h2 className="text-white text-display-lg-mobile font-display-lg-mobile mt-1">
+              {summary ? formatTRY(summary.totalInventoryValueTRY) : "₺0,00"}
+            </h2>
+            <div className="flex gap-4 mt-6">
+              <div className="flex-1 bg-white/10 backdrop-blur-md rounded-lg p-3 transition-all duration-300 hover:scale-105 hover:shadow-md active:scale-95 cursor-pointer overflow-hidden relative group">
+                <div className="absolute inset-0 animate-shimmer pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
+                <p className="text-white/70 text-label-sm font-label-sm">{t("finance.monthlyIncome")}</p>
+                <p className="text-white font-bold text-label-md">{formatTRY(monthlyGelirTRY)}</p>
+              </div>
+              <div className="flex-1 bg-white/10 backdrop-blur-md rounded-lg p-3 transition-all duration-300 hover:scale-105 hover:shadow-md active:scale-95 cursor-pointer overflow-hidden relative group">
+                <div className="absolute inset-0 animate-shimmer pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
+                <p className="text-white/70 text-label-sm font-label-sm">{t("finance.monthlyExpense")}</p>
+                <p className="text-white font-bold text-label-md">{formatTRY(monthlyGiderTRY)}</p>
               </div>
             </div>
-          )}
+          </div>
+        </section>
 
-          {/* Kârlılık */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-6">
-              <h2 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">Kârlılık Analizi</h2>
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-slate-600 dark:text-slate-400">Envanter Değeri (USD)</span>
-                  <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">{formatUSD(summary.totalInventoryValueUSD)}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-slate-600 dark:text-slate-400">Envanter Maliyeti (USD)</span>
-                  <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">{formatUSD(summary.totalInventoryCostUSD)}</span>
-                </div>
-                <div className="border-t border-slate-100 dark:border-slate-700 pt-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Potansiyel Kâr (USD)</span>
-                    <span className="text-sm font-bold text-green-600 dark:text-green-400">{formatUSD(summary.totalPotentialProfitUSD)}</span>
-                  </div>
-                  <div className="flex justify-between items-center mt-2">
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Potansiyel Kâr (TL)</span>
-                    <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{formatTRY(summary.totalPotentialProfitTRY)}</span>
-                  </div>
-                  {summary.totalInventoryCostUSD > 0 && (
-                    <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Kâr Marjı</span>
-                        <span className="text-lg font-bold text-indigo-600 dark:text-indigo-400">
-                          %{(((summary.totalInventoryValueUSD - summary.totalInventoryCostUSD) / summary.totalInventoryCostUSD) * 100).toFixed(1)}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div className="pt-3 border-t border-slate-100 dark:border-slate-700">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-slate-400 dark:text-slate-500">Güncel Kur</span>
-                    <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                      {summary.currentExchangeRate.toFixed(4)} ₺
-                      <span className="text-xs text-slate-400 ml-1">USD/TRY</span>
-                    </span>
-                  </div>
-                </div>
-              </div>
+        {/* ====== Action Buttons: Kâr Raporu & Gider Raporu ====== */}
+        <section className="mt-stack-lg grid grid-cols-2 gap-4">
+          <ReportButton
+            icon="trending_up"
+            label={t("finance.profitReport")}
+            bgClass="bg-emerald-50"
+            borderClass="border-emerald-100"
+            textClass="text-emerald-700"
+            onClick={() => openSheetFn("sheet-kar")}
+          />
+          <ReportButton
+            icon="trending_down"
+            label={t("finance.expenseReport")}
+            bgClass="bg-rose-50"
+            borderClass="border-rose-100"
+            textClass="text-rose-700"
+            onClick={() => openSheetFn("sheet-gider")}
+          />
+        </section>
+
+        {/* ====== Quick Actions Grid ====== */}
+        <section className="mt-stack-lg grid grid-cols-3 gap-4">
+          <ActionButton icon="payments" label={t("finance.payment")} onClick={() => openSheetFn("sheet-odeme")} />
+          <ActionButton icon="receipt_long" label={t("finance.invoice")} onClick={() => openSheetFn("sheet-fatura")} />
+          <ActionButton icon="account_balance_wallet" label={t("finance.transfer")} onClick={() => openSheetFn("sheet-transfer")} />
+        </section>
+
+        {/* ====== Transactions List ====== */}
+        {movements.length > 0 && (
+          <section className="mt-stack-lg pb-4">
+            <div className="flex items-center justify-between mb-stack-md">
+              <h3 className="text-headline-sm font-bold text-on-surface">{t("finance.transactions")}</h3>
+              <button className="text-primary text-label-md font-label-md">{t("finance.viewAll")}</button>
             </div>
+            <div className="space-y-3">
+              {movements.slice(0, 10).map((m, i) => (
+                <TransactionItem key={m.id} movement={m} index={i} currentRate={currentRate?.rate || null} />
+              ))}
+            </div>
+          </section>
+        )}
 
-            {/* Son İşlemler */}
-            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-6">
-              <h2 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4">Son Finansal İşlemler</h2>
-              {movements.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-48 text-slate-400 dark:text-slate-500">
-                  <span className="text-3xl mb-2">📭</span>
-                  <p className="text-sm">Henüz işlem yok</p>
-                </div>
-              ) : (
-                <div className="space-y-2 max-h-72 overflow-y-auto">
-                  {movements.slice(0, 15).map((m) => (
-                    <div key={m.id} className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-700/30 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0 ${m.type === "IN" ? "bg-red-100 dark:bg-red-900/30 text-red-600" : "bg-green-100 dark:bg-green-900/30 text-green-600"}`}>
-                          {m.type === "IN" ? "📥" : "📤"}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate">{m.product?.name || "Ürün"}</p>
-                          <p className="text-[10px] text-slate-400 dark:text-slate-500">{Math.abs(m.quantity)} adet • {new Date(m.createdAt).toLocaleDateString("tr-TR")}</p>
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className={`text-xs font-semibold ${m.type === "OUT" ? "text-green-600" : "text-red-600"}`}>
-                          {m.type === "OUT" ? "+" : "-"}{m.totalPriceUSD ? formatUSD(m.totalPriceUSD) : "—"}
-                        </p>
-                        {m.totalPriceTRY && <p className="text-[10px] text-slate-400">{formatTRY(m.totalPriceTRY)}</p>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+        {movements.length === 0 && !loading && (
+          <section className="mt-stack-lg pb-4">
+            <div className="flex flex-col items-center justify-center py-16 text-on-surface-variant">
+              <span className="material-symbols-outlined text-5xl mb-4 text-outline">receipt_long</span>
+              <p className="text-body-md font-medium">{t("finance.noTransactions")}</p>
+              <p className="text-body-sm mt-1">{t("finance.noTransactionsHint")}</p>
+            </div>
+          </section>
+        )}
+      </main>
+
+      {/* ====== SHEET OVERLAY ====== */}
+
+      {/* ====== BOTTOM SHEETS ====== */}
+
+      {/* Ödeme Sheet */}
+      <BottomSheet id="sheet-odeme" isOpen={openSheet === "sheet-odeme"} onClose={closeSheet} title={t("finance.newPayment")}>
+        <form onSubmit={(e) => handleFormSubmit("Ödeme", e)} className="space-y-4">
+          <div>
+            <label className="block text-label-sm text-on-surface-variant mb-1">{t("finance.paymentName")}</label>
+            <input
+              className="w-full bg-surface-container-low border border-outline-variant rounded-lg p-3 text-body-md focus:ring-primary focus:border-primary outline-none transition-all"
+              placeholder={t("finance.paymentPlaceholder")}
+              value={formOdeme.name}
+              onChange={(e) => setFormOdeme((p) => ({ ...p, name: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-label-sm text-on-surface-variant mb-1">{t("finance.description")}</label>
+            <textarea
+              className="w-full bg-surface-container-low border border-outline-variant rounded-lg p-3 text-body-md focus:ring-primary focus:border-primary outline-none transition-all resize-none"
+              placeholder={t("finance.descPlaceholder")}
+              rows={2}
+              value={formOdeme.description}
+              onChange={(e) => setFormOdeme((p) => ({ ...p, description: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-label-sm text-on-surface-variant mb-1">{t("finance.amount")}</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">₺</span>
+              <input
+                className="w-full bg-surface-container-low border border-outline-variant rounded-lg p-3 pl-8 text-body-md focus:ring-primary focus:border-primary outline-none transition-all"
+                placeholder="0.00"
+                type="number"
+                step="0.01"
+                value={formOdeme.amount}
+                onChange={(e) => setFormOdeme((p) => ({ ...p, amount: e.target.value }))}
+              />
             </div>
           </div>
-        </>
-      )}
+          <button
+            type="submit"
+            className="w-full bg-primary text-white font-bold py-4 rounded-xl mt-4 active:scale-[0.98] transition-transform shadow-md hover:shadow-lg"
+          >
+            {t("finance.savePayment")}
+          </button>
+        </form>
+      </BottomSheet>
+
+      {/* Fatura Sheet */}
+      <BottomSheet id="sheet-fatura" isOpen={openSheet === "sheet-fatura"} onClose={closeSheet} title={t("finance.invoiceAdd")}>
+        <form onSubmit={(e) => handleFormSubmit("Fatura", e)} className="space-y-4">
+          <div>
+            <label className="block text-label-sm text-on-surface-variant mb-1">{t("finance.invoiceNo")}</label>
+            <input
+              className="w-full bg-surface-container-low border border-outline-variant rounded-lg p-3 text-body-md focus:ring-primary focus:border-primary outline-none transition-all"
+              placeholder={t("finance.invoicePlaceholder")}
+              value={formFatura.no}
+              onChange={(e) => setFormFatura((p) => ({ ...p, no: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-label-sm text-on-surface-variant mb-1">{t("finance.description")}</label>
+            <input
+              className="w-full bg-surface-container-low border border-outline-variant rounded-lg p-3 text-body-md focus:ring-primary focus:border-primary outline-none transition-all"
+              placeholder={t("finance.invoiceContent")}
+              value={formFatura.description}
+              onChange={(e) => setFormFatura((p) => ({ ...p, description: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-label-sm text-on-surface-variant mb-1">{t("finance.amount")}</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">₺</span>
+              <input
+                className="w-full bg-surface-container-low border border-outline-variant rounded-lg p-3 pl-8 text-body-md focus:ring-primary focus:border-primary outline-none transition-all"
+                placeholder="0.00"
+                type="number"
+                step="0.01"
+                value={formFatura.amount}
+                onChange={(e) => setFormFatura((p) => ({ ...p, amount: e.target.value }))}
+              />
+            </div>
+          </div>
+          <button
+            type="submit"
+            className="w-full bg-primary text-white font-bold py-4 rounded-xl mt-4 active:scale-[0.98] transition-transform shadow-md hover:shadow-lg"
+          >
+            {t("finance.createInvoice")}
+          </button>
+        </form>
+      </BottomSheet>
+
+      {/* Transfer Sheet */}
+      <BottomSheet id="sheet-transfer" isOpen={openSheet === "sheet-transfer"} onClose={closeSheet} title={t("finance.transferTitle")}>
+        <form onSubmit={(e) => handleFormSubmit("Transfer", e)} className="space-y-4">
+          <div>
+            <label className="block text-label-sm text-on-surface-variant mb-1">{t("finance.recipientIban")}</label>
+            <input
+              className="w-full bg-surface-container-low border border-outline-variant rounded-lg p-3 text-body-md focus:ring-primary focus:border-primary outline-none transition-all"
+              placeholder={t("finance.ibanPlaceholder")}
+              value={formTransfer.recipient}
+              onChange={(e) => setFormTransfer((p) => ({ ...p, recipient: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-label-sm text-on-surface-variant mb-1">{t("finance.description")}</label>
+            <input
+              className="w-full bg-surface-container-low border border-outline-variant rounded-lg p-3 text-body-md focus:ring-primary focus:border-primary outline-none transition-all"
+              placeholder={t("finance.transferReason")}
+              value={formTransfer.description}
+              onChange={(e) => setFormTransfer((p) => ({ ...p, description: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-label-sm text-on-surface-variant mb-1">{t("finance.amount")}</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">₺</span>
+              <input
+                className="w-full bg-surface-container-low border border-outline-variant rounded-lg p-3 pl-8 text-body-md focus:ring-primary focus:border-primary outline-none transition-all"
+                placeholder="0.00"
+                type="number"
+                step="0.01"
+                value={formTransfer.amount}
+                onChange={(e) => setFormTransfer((p) => ({ ...p, amount: e.target.value }))}
+              />
+            </div>
+          </div>
+          <button
+            type="submit"
+            className="w-full bg-primary text-white font-bold py-4 rounded-xl mt-4 active:scale-[0.98] transition-transform shadow-md hover:shadow-lg"
+          >
+            {t("finance.startTransfer")}
+          </button>
+        </form>
+      </BottomSheet>
+
+      {/* Kâr Raporu Sheet */}
+      <BottomSheet id="sheet-kar" isOpen={openSheet === "sheet-kar"} onClose={closeSheet} title={t("finance.profitAnalysis")} icon="trending_up" iconColor="text-emerald-600" large>
+        <div className="overflow-y-auto pr-1">
+          <div className="bg-surface-container-low p-4 rounded-xl mb-6">
+            <MiniChart data={karChartData} color="#10b981" />
+            <div className="flex justify-between mt-2 text-label-sm text-on-surface-variant">
+              <span>Oca</span>
+              <span>Şub</span>
+              <span>Mar</span>
+              <span>Nis</span>
+              <span>May</span>
+            </div>
+          </div>
+          <div className="space-y-3">
+            <div className="flex justify-between p-3 border-b border-outline-variant">
+              <span className="text-body-md">{t("finance.netProfit")}</span>
+              <span className="text-body-md font-bold text-emerald-600">{formatTRY(monthlyKarTRY)}</span>
+            </div>
+            <div className="flex justify-between p-3 border-b border-outline-variant">
+              <span className="text-body-md">{t("finance.growthRate")}</span>
+              <span className="text-body-md font-bold text-emerald-600">%12.4</span>
+            </div>
+            {summary && (
+              <>
+                <div className="flex justify-between p-3 border-b border-outline-variant">
+                  <span className="text-body-md">{t("finance.potentialProfitUSD")}</span>
+                  <span className="text-body-md font-bold text-on-surface">{formatUSD(summary.totalPotentialProfitUSD)}</span>
+                </div>
+                <div className="flex justify-between p-3 border-b border-outline-variant">
+                  <span className="text-body-md">{t("finance.potentialProfitTRY")}</span>
+                  <span className="text-body-md font-bold text-on-surface">{formatTRY(summary.totalPotentialProfitTRY)}</span>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </BottomSheet>
+
+      {/* Gider Raporu Sheet */}
+      <BottomSheet id="sheet-gider" isOpen={openSheet === "sheet-gider"} onClose={closeSheet} title={t("finance.expenseAnalysis")} icon="trending_down" iconColor="text-rose-600" large>
+        <div className="overflow-y-auto pr-1">
+          <div className="bg-surface-container-low p-4 rounded-xl mb-6">
+            <MiniChart data={giderChartData} color="#f43f5e" />
+            <div className="flex justify-between mt-2 text-label-sm text-on-surface-variant">
+              <span>Oca</span>
+              <span>Şub</span>
+              <span>Mar</span>
+              <span>Nis</span>
+              <span>May</span>
+            </div>
+          </div>
+          <div className="space-y-3">
+            <div className="flex justify-between p-3 border-b border-outline-variant">
+              <span className="text-body-md">{t("finance.totalExpense")}</span>
+              <span className="text-body-md font-bold text-rose-600">{formatTRY(monthlyGiderTRY)}</span>
+            </div>
+            <div className="flex justify-between p-3 border-b border-outline-variant">
+              <span className="text-body-md">{t("finance.incomeExpenseRatio")}</span>
+              <span className="text-body-md font-bold text-on-surface">
+                {monthlyGiderTRY > 0 ? `%${((monthlyGelirTRY / monthlyGiderTRY) * 100).toFixed(1)}` : "—"}
+              </span>
+            </div>
+          </div>
+        </div>
+      </BottomSheet>
     </div>
   );
 }

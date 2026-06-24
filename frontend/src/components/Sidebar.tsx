@@ -146,7 +146,7 @@ export default function Sidebar() {
             </div>
             <div className="flex-1 min-w-0">
               <h1 className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate">
-                EnvanterPro
+                OlmezEnvanter
               </h1>
               <p className="text-[10px] text-slate-400 dark:text-slate-500">Envanter Yönetim Sistemi</p>
             </div>
@@ -219,7 +219,7 @@ export default function Sidebar() {
           {/* Alt bilgi */}
           <div className="border-t border-slate-100 dark:border-slate-700/50 p-4 shrink-0">
             <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center">
-              EnvanterPro v1.0.0 &copy; {new Date().getFullYear()}
+              OlmezEnvanter v1.0.0 &copy; {new Date().getFullYear()}
             </p>
           </div>
         </div>

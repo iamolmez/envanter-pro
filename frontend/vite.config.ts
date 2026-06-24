@@ -12,8 +12,8 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg"],
       manifest: {
-        name: "EnvanterPro",
-        short_name: "EnvanterPro",
+        name: "OlmezEnvanter",
+        short_name: "OlmezEnvanter",
         description:
           "Akıllı barkodlu envanter ve finans yönetim sistemi",
         theme_color: "#1e40af",
@@ -59,7 +59,7 @@ export default defineConfig({
     host: "192.168.1.110", // Telefondan erişim için
     proxy: {
       "/api": {
-        target: "http://localhost:3002",
+        target: "http://localhost:3001",
         changeOrigin: true,
       },
     },

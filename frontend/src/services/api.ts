@@ -118,6 +118,45 @@ export const productService = {
     );
     return response.data.data;
   },
+
+  async uploadImage(id: number, imageUrl: string): Promise<void> {
+    await api.put(`/products/${id}/image`, { imageUrl });
+  },
+
+  async deleteImage(id: number): Promise<void> {
+    await api.delete(`/products/${id}/image`);
+  },
+
+  async exportCSV(): Promise<Blob> {
+    const response = await api.get("/products/export/csv", {
+      responseType: "blob",
+    });
+    return response.data;
+  },
+
+  async importCSV(csv: string): Promise<{
+    results: Array<{ row: number; name: string; status: string; error?: string }>;
+    totalProcessed: number;
+    created: number;
+    updated: number;
+    errors: number;
+  }> {
+    const response = await api.post<
+      ApiResponse<{
+        results: Array<{
+          row: number;
+          name: string;
+          status: string;
+          error?: string;
+        }>;
+        totalProcessed: number;
+        created: number;
+        updated: number;
+        errors: number;
+      }>
+    >("/products/import/csv", { csv });
+    return response.data.data;
+  },
 };
 
 // ==================== STOK HAREKET SERVİSLERİ ====================

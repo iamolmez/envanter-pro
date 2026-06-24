@@ -112,7 +112,7 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
       );
       totalCount = Number(countRows[0]?.count) || 0;
     } else {
-      // Normal sorgu (güvenli - Prisma ORM parametreize sorgu kullanır)
+      // Normal sorgu (güvenli - Prisma ORM)
       [products, totalCount] = await Promise.all([
         prisma.product.findMany({
           where: where as any,
@@ -122,6 +122,32 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
         }),
         prisma.product.count({ where: where as any }),
       ]);
+
+      // imageUrl bilgisini batch raw SQL ile ekle (Prisma client eski olduğu için)
+      try {
+        await prisma.$executeRawUnsafe(
+          `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "imageUrl" TEXT`
+        );
+        const ids = (products as any[]).map((p: any) => p.id);
+        if (ids.length > 0) {
+          const placeholders = ids.map((_: any, i: number) => `$${i + 1}`).join(",");
+          const imageRows = await prisma.$queryRawUnsafe<
+            Array<{ id: number; imageUrl: string | null }>
+          >(
+            `SELECT id, "imageUrl" FROM "Product" WHERE id IN (${placeholders})`,
+            ...ids
+          );
+          const imageMap = new Map(
+            imageRows.map((r) => [r.id, r.imageUrl])
+          );
+          products = (products as any[]).map((p: any) => ({
+            ...p,
+            imageUrl: imageMap.get(p.id) || null,
+          }));
+        }
+      } catch {
+        // Kolon henüz eklenmemiş olabilir, sessizce geç
+      }
     }
 
     res.json({
@@ -184,7 +210,7 @@ router.get(
   }
 );
 
-// GET /api/products/:id - Tek ürün getir
+// GET /api/products/:id - Tek ürün getir (imageUrl dahil)
 router.get("/:id", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = parseInt(req.params.id as string);
@@ -206,6 +232,17 @@ router.get("/:id", async (req: Request, res: Response, next: NextFunction) => {
       throw new AppError("Ürün bulunamadı", 404);
     }
 
+    // imageUrl'i ayrıca çek (Prisma client eski olduğu için)
+    let imageUrl: string | null = null;
+    try {
+      const rows = await prisma.$queryRawUnsafe<
+        Array<{ imageUrl: string | null }>
+      >(`SELECT "imageUrl" FROM "Product" WHERE "id" = $1`, id);
+      imageUrl = rows[0]?.imageUrl || null;
+    } catch {
+      // imageUrl kolonu henüz eklenmemiş olabilir
+    }
+
     // TL cinsinden hesaplamalar
     const currentRate = await getCurrentExchangeRate();
     const totalValueUSD = product.currentStock * product.salePriceUSD;
@@ -218,6 +255,7 @@ router.get("/:id", async (req: Request, res: Response, next: NextFunction) => {
       success: true,
       data: {
         ...product,
+        imageUrl,
         currentExchangeRate: currentRate.rate,
         totalValueUSD,
         totalValueTRY,
@@ -244,6 +282,7 @@ router.post("/", async (req: Request, res: Response, next: NextFunction) => {
       currentStock,
       minStockLevel,
       unit,
+      imageUrl,
     } = req.body;
 
     // Zorunlu alan kontrolleri
@@ -283,9 +322,12 @@ router.post("/", async (req: Request, res: Response, next: NextFunction) => {
         now.getSeconds().toString().padStart(2, "0");
       const categoryPrefix = (category || "GEN").substring(0, 3).toUpperCase();
       sku = `${categoryPrefix}-${dateStr}`;
-    }
+    }      // imageUrl kolonunu varsa ekle
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "imageUrl" TEXT`
+      ).catch(() => {});
 
-    const product = await prisma.product.create({
+      const product = await prisma.product.create({
       data: {
         sku,
         barcode: barcode?.trim() || null,
@@ -299,6 +341,15 @@ router.post("/", async (req: Request, res: Response, next: NextFunction) => {
         unit: unit || "Adet",
       },
     });
+
+    // imageUrl varsa raw SQL ile direkt kaydet
+    if (imageUrl && typeof imageUrl === "string") {
+      await prisma.$executeRawUnsafe(
+        `UPDATE "Product" SET "imageUrl" = $1 WHERE "id" = $2`,
+        imageUrl,
+        product.id
+      );
+    }
 
     // İlk stok girişi varsa stok hareketi oluştur
     if (product.currentStock > 0) {
@@ -574,6 +625,361 @@ router.put(
       res.json({
         success: true,
         data: updatedProduct,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ==================== ÜRÜN RESMİ ====================
+
+// PUT /api/products/:id/image - Ürün resmini yükle/güncelle
+router.put(
+  "/:id/image",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) throw new AppError("Geçersiz ID", 400);
+
+      const { imageUrl } = req.body;
+      if (!imageUrl || typeof imageUrl !== "string") {
+        throw new AppError("imageUrl (base64 data URL) gerekli", 400);
+      }
+
+      // Maksimum 2MB
+      const sizeInBytes = Buffer.byteLength(imageUrl, "utf-8");
+      if (sizeInBytes > 2 * 1024 * 1024) {
+        throw new AppError("Resim boyutu 2MB'ı geçemez", 400);
+      }
+
+      // Önce kolon var mı kontrol et, yoksa ekle
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE "Product" ADD COLUMN IF NOT EXISTS "imageUrl" TEXT`
+      );
+
+      await prisma.$executeRawUnsafe(
+        `UPDATE "Product" SET "imageUrl" = $1, "updatedAt" = NOW() WHERE "id" = $2`,
+        imageUrl,
+        id
+      );
+
+      res.json({ success: true, data: { id, imageUrl: imageUrl.slice(0, 50) + "..." } });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// DELETE /api/products/:id/image - Ürün resmini sil
+router.delete(
+  "/:id/image",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) throw new AppError("Geçersiz ID", 400);
+
+      await prisma.$executeRawUnsafe(
+        `UPDATE "Product" SET "imageUrl" = NULL, "updatedAt" = NOW() WHERE "id" = $1`,
+        id
+      );
+
+      res.json({ success: true, message: "Resim silindi" });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ==================== CSV İÇE / DIŞA AKTAR ====================
+
+// GET /api/products/export/csv - Tüm ürünleri CSV olarak dışa aktar
+router.get(
+  "/export/csv",
+  async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const products = await prisma.product.findMany({
+        where: { isActive: true },
+        orderBy: { name: "asc" },
+      });
+
+      // CSV başlık satırı
+      const headers = [
+        "sku",
+        "barcode",
+        "name",
+        "category",
+        "purchasePriceUSD",
+        "salePriceUSD",
+        "currentStock",
+        "minStockLevel",
+        "unit",
+        "description",
+      ];
+
+      // CSV satırlarını oluştur
+      const escapeCsv = (val: string | null | undefined) => {
+        if (val === null || val === undefined) return "";
+        const str = String(val);
+        // Tırnak veya virgül varsa çift tırnak içine al
+        if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      };
+
+      const csvRows = [
+        headers.join(","),
+        ...products.map((p) =>
+          [
+            escapeCsv(p.sku),
+            escapeCsv(p.barcode),
+            escapeCsv(p.name),
+            escapeCsv(p.category),
+            p.purchasePriceUSD.toString(),
+            p.salePriceUSD.toString(),
+            p.currentStock.toString(),
+            p.minStockLevel.toString(),
+            escapeCsv(p.unit),
+            escapeCsv(p.description),
+          ].join(",")
+        ),
+      ];
+
+      const csvContent = csvRows.join("\n");
+
+      // BOM ile UTF-8 CSV (Excel'de Türkçe karakterler düzgün görünsün diye)
+      const bom = "\uFEFF";
+
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="urunler-${new Date()
+          .toISOString()
+          .slice(0, 10)}.csv"`
+      );
+      res.send(bom + csvContent);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /api/products/import/csv - CSV'den ürünleri içe aktar
+router.post(
+  "/import/csv",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { csv } = req.body;
+
+      if (!csv || typeof csv !== "string" || csv.trim().length === 0) {
+        throw new AppError("CSV içeriği gerekli", 400);
+      }
+
+      // BOM karakterini temizle
+      let cleanCsv = csv.replace(/^\uFEFF/, "").trim();
+
+      // Satırlara ayır
+      const lines = cleanCsv.split("\n").filter((l) => l.trim());
+      if (lines.length < 2) {
+        throw new AppError("CSV en az bir başlık ve bir veri satırı içermeli", 400);
+      }
+
+      // Basit CSV ayrıştırıcı (tırnak içindeki virgülleri dikkate alır)
+      const parseCSVLine = (line: string): string[] => {
+        const result: string[] = [];
+        let current = "";
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i];
+          if (ch === '"') {
+            if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
+              current += '"';
+              i++;
+            } else {
+              inQuotes = !inQuotes;
+            }
+          } else if (ch === "," && !inQuotes) {
+            result.push(current);
+            current = "";
+          } else {
+            current += ch;
+          }
+        }
+        result.push(current);
+        return result;
+      };
+
+      // Başlıkları al
+      const headerLine = parseCSVLine(lines[0]);
+      const headerMap = new Map<string, number>();
+      const expectedHeaders = [
+        "name", "barcode", "category", "purchasePriceUSD",
+        "salePriceUSD", "currentStock", "minStockLevel", "unit", "description",
+      ];
+
+      headerLine.forEach((h, i) => headerMap.set(h.trim().toLowerCase(), i));
+
+      // En azından name sütunu olmalı
+      if (!headerMap.has("name")) {
+        throw new AppError("CSV'de 'name' sütunu zorunludur", 400);
+      }
+
+      const currentRate = await getCurrentExchangeRate();
+      const results: Array<{
+        row: number;
+        name: string;
+        status: "created" | "updated" | "skipped" | "error";
+        error?: string;
+      }> = [];
+
+      let created = 0;
+      let updated = 0;
+      let errors = 0;
+
+      for (let i = 1; i < lines.length; i++) {
+        const row = parseCSVLine(lines[i]);
+        const rowNum = i + 1;
+
+        const getVal = (key: string): string | undefined => {
+          const idx = headerMap.get(key.toLowerCase());
+          if (idx === undefined || idx >= row.length) return undefined;
+          return row[idx].trim();
+        };
+
+        try {
+          const name = getVal("name");
+          if (!name) {
+            results.push({
+              row: rowNum,
+              name: `Satır ${rowNum}`,
+              status: "error",
+              error: "Ürün adı boş",
+            });
+            errors++;
+            continue;
+          }
+
+          const barcode = getVal("barcode");
+          const category = getVal("category") || "Genel";
+          const purchasePriceUSD = parseFloat(getVal("purchasePriceUSD") || "0");
+          const salePriceUSD = parseFloat(getVal("salePriceUSD") || "0");
+          const currentStock = parseInt(getVal("currentStock") || "0");
+          const minStockLevel = parseInt(getVal("minStockLevel") || "5");
+          const unit = getVal("unit") || "Adet";
+          const description = getVal("description") || null;
+
+          if (barcode) {
+            // Barkod varsa mevcut ürünü güncelle
+            const existing = await prisma.product.findUnique({
+              where: { barcode },
+            });
+
+            if (existing) {
+              await prisma.product.update({
+                where: { id: existing.id },
+                data: {
+                  name,
+                  category,
+                  purchasePriceUSD,
+                  salePriceUSD,
+                  currentStock,
+                  minStockLevel,
+                  unit,
+                  description,
+                  isActive: true,
+                },
+              });
+              updated++;
+              results.push({ row: rowNum, name, status: "updated" });
+            } else {
+              // Yeni ürün oluştur
+              await prisma.product.create({
+                data: {
+                  sku: barcode,
+                  barcode,
+                  name,
+                  category,
+                  purchasePriceUSD,
+                  salePriceUSD,
+                  currentStock,
+                  minStockLevel,
+                  unit,
+                  description,
+                },
+              });
+              created++;
+              results.push({ row: rowNum, name, status: "created" });
+
+              // Stok hareketi oluştur
+              if (currentStock > 0) {
+                await prisma.stockMovement.create({
+                  data: {
+                    productId: (
+                      await prisma.product.findUnique({ where: { barcode } })
+                    )!.id,
+                    type: "IN",
+                    quantity: currentStock,
+                    unitPriceUSD: purchasePriceUSD,
+                    exchangeRateTRY: currentRate.rate,
+                    totalPriceUSD: currentStock * purchasePriceUSD,
+                    totalPriceTRY:
+                      currentStock * purchasePriceUSD * currentRate.rate,
+                    note: "CSV toplu içe aktarım",
+                  },
+                });
+              }
+            }
+          } else {
+            // Barkod yok, isimle kontrol et (SKU oluşturarak ekle)
+            const now = new Date();
+            const dateStr =
+              now.getFullYear().toString().slice(-2) +
+              (now.getMonth() + 1).toString().padStart(2, "0") +
+              now.getDate().toString().padStart(2, "0") +
+              now.getHours().toString().padStart(2, "0") +
+              now.getMinutes().toString().padStart(2, "0") +
+              now.getSeconds().toString().padStart(2, "0");
+            const categoryPrefix = category.substring(0, 3).toUpperCase();
+            const sku = `${categoryPrefix}-${dateStr}-${String(i).padStart(3, "0")}`;
+
+            await prisma.product.create({
+              data: {
+                sku,
+                name,
+                category,
+                purchasePriceUSD,
+                salePriceUSD,
+                currentStock,
+                minStockLevel,
+                unit,
+                description,
+              },
+            });
+            created++;
+            results.push({ row: rowNum, name, status: "created" });
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Bilinmeyen hata";
+          errors++;
+          results.push({
+            row: rowNum,
+            name: getVal("name") || `Satır ${rowNum}`,
+            status: "error",
+            error: msg,
+          });
+        }
+      }
+
+      res.json({
+        success: true,
+        data: {
+          results,
+          totalProcessed: results.length,
+          created,
+          updated,
+          errors,
+        },
       });
     } catch (error) {
       next(error);

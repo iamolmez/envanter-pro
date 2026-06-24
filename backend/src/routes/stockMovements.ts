@@ -295,6 +295,10 @@ router.get(
       });
 
       const totalProducts = products.length;
+      const totalStockQuantity = products.reduce(
+        (sum, p) => sum + p.currentStock,
+        0
+      );
       const lowStockCount = products.filter(
         (p) => p.currentStock <= p.minStockLevel
       ).length;
@@ -318,17 +322,34 @@ router.get(
       const totalInventoryValueTRY = totalInventoryValueUSD * currentRate.rate;
       const totalProfitTRY = totalPotentialProfitUSD * currentRate.rate;
 
+      // Bu ayki gelir (OUT hareketleri)
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const monthlyOutMovements = await prisma.stockMovement.findMany({
+        where: {
+          type: "OUT",
+          createdAt: { gte: startOfMonth },
+        },
+      });
+      const monthlyRevenueUSD = monthlyOutMovements.reduce(
+        (sum, m) => sum + (m.totalPriceUSD || 0),
+        0
+      );
+
       res.json({
         success: true,
         data: {
           totalProducts,
           lowStockCount,
           outOfStockCount,
+          totalStockQuantity,
           totalInventoryCostUSD,
           totalInventoryValueUSD,
           totalInventoryValueTRY,
           totalPotentialProfitUSD,
           totalPotentialProfitTRY: totalProfitTRY,
+          monthlyRevenueUSD,
+          monthlyRevenueTRY: monthlyRevenueUSD * currentRate.rate,
           currentExchangeRate: currentRate.rate,
           exchangeRateDate: currentRate.date,
           exchangeRateSource: currentRate.source,

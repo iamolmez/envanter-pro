@@ -4,7 +4,7 @@ const prisma = new PrismaClient();
 
 const defaultSettings = [
   // ========== GENEL AYARLAR ==========
-  { key: "company_name", value: "EnvanterPro", group: "general" },
+  { key: "company_name", value: "OlmezEnvanter", group: "general" },
   { key: "company_address", value: "", group: "general" },
   { key: "company_phone", value: "", group: "general" },
   { key: "company_email", value: "", group: "general" },

@@ -59,19 +59,19 @@ export default function Modal({
       {/* Modal içeriği */}
       <div
         className={`
-          relative w-full ${sizeClasses[size]} bg-white dark:bg-slate-800 rounded-2xl shadow-2xl
+          relative w-full ${sizeClasses[size]} bg-surface dark:bg-surface-dim rounded-2xl shadow-2xl
           animate-scale-in max-h-[90vh] flex flex-col
-          border border-slate-200 dark:border-slate-700
+          border border-outline-variant
         `}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-700">
-          <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{title}</h3>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant">
+          <h3 className="text-headline-sm font-headline-sm font-bold text-on-surface">{title}</h3>
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-slate-400 dark:text-slate-500 hidden sm:inline">ESC</span>
+            <span className="text-label-sm text-on-surface-variant hidden sm:inline">ESC</span>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-all duration-150 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 active:scale-90"
+              className="p-1.5 rounded-lg hover:bg-surface-container-low transition-all duration-150 text-on-surface-variant hover:text-on-surface active:scale-90"
               aria-label="Kapat"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -82,7 +82,7 @@ export default function Modal({
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-6">{children}</div>
+        <div className="flex-1 overflow-y-auto p-6 text-body-md text-on-surface-variant">{children}</div>
       </div>
     </div>
   );

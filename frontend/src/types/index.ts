@@ -11,6 +11,7 @@ export interface Product {
   currentStock: number;
   minStockLevel: number;
   unit: string;
+  imageUrl?: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -34,6 +35,7 @@ export interface ProductFormData {
   currentStock?: number;
   minStockLevel?: number;
   unit?: string;
+  imageUrl?: string | null;
 }
 
 // ==================== STOK HAREKET TİPLERİ ====================
@@ -132,6 +134,7 @@ export interface PaginatedResponse<T> {
 // ==================== DASHBOARD TİPLERİ ====================
 export interface DashboardSummary {
   totalProducts: number;
+  totalStockQuantity: number;
   lowStockCount: number;
   outOfStockCount: number;
   totalInventoryCostUSD: number;
@@ -139,6 +142,8 @@ export interface DashboardSummary {
   totalInventoryValueTRY: number;
   totalPotentialProfitUSD: number;
   totalPotentialProfitTRY: number;
+  monthlyRevenueUSD: number;
+  monthlyRevenueTRY: number;
   currentExchangeRate: number;
   exchangeRateDate: string;
   exchangeRateSource: string;
